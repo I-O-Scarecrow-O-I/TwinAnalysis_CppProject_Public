@@ -111,7 +111,7 @@ sudo apt-get install -y --no-install-recommends \
 ### 4.2 Get the repository
 
 ```bash
-git clone https://github.com/I-O-Scarecrow-O-I/twin-analysis-CppProject_Public.git
+git clone https://github.com/I-O-Scarecrow-O-I/TwinAnalysis_CppProject_Public.git
 cd TwinAnalysis_CppProject
 ```
 
