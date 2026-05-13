@@ -1,0 +1,71 @@
+{
+  "metaData": {
+    "modelName": "main_graph",
+    "producerName": "pytorch",
+    "domain": "",
+    "version": 1,
+    "description": ""
+  },
+  "inputs": [
+    {
+      "name": "a",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [
+        -1
+      ],
+      "shapeDescription": [
+        "BatchSize"
+      ]
+    },
+    {
+      "name": "b",
+      "index": 1,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [
+        -1
+      ],
+      "shapeDescription": [
+        "BatchSize"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "c",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [
+        -1
+      ],
+      "shapeDescription": [
+        "BatchSize"
+      ]
+    }
+  ],
+  "parameters": {
+    "requiresCUDA": false
+  },
+  "statistics": {
+    "totalInputs": 2,
+    "totalOutputs": 1,
+    "dynamicInputs": 2,
+    "dynamicOutputs": 1
+  },
+  "modelFileInfo": {
+    "path": "models/add_model.onnx",
+    "sizeBytes": 1203,
+    "sizeMB": 0.0011472702026367188
+  },
+  "parserInfo": {
+    "version": "0.1.0",
+    "generatedAt": "2026-05-09T00:19:26",
+    "tool": "ONNX Model Parser"
+  }
+}

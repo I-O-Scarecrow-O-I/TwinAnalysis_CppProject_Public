@@ -1,0 +1,56 @@
+{
+  "protocolVersion": "1.0",
+  "taskId": "tc_string_identity_vec3_std",
+  "block": {
+    "blockKey": "string_identity_vec3",
+    "blockName": "StringIdentityVec3"
+  },
+  "implementation": {
+    "type": "ONNX",
+    "filename": "string_identity_vec3.onnx",
+    "deliveryPackageRelativePath": "model/string_identity_vec3.onnx"
+  },
+  "portMapping": {
+    "p_in": { "text": "input_text" },
+    "p_out": { "text": "output_text" }
+  },
+  "expectedBindings": [
+    {
+      "sysmlPath": "p_in.text",
+      "target": {
+        "name": "input_text",
+        "kind": "tensor",
+        "role": "input",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "input",
+      "expectedType": "string",
+      "expectedShape": [ 3 ],
+      "expectedPrecision": "string"
+    },
+    {
+      "sysmlPath": "p_out.text",
+      "target": {
+        "name": "output_text",
+        "kind": "tensor",
+        "role": "output",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "output",
+      "expectedType": "string",
+      "expectedShape": [ 3 ],
+      "expectedPrecision": "string"
+    }
+  ],
+  "generationOptions": {
+    "language": "C++",
+    "cppStandard": "C++17",
+    "nameSpace": "twin.generated",
+    "className": "StringIdentityVec3Wrapper",
+    "emitMappingTable": true,
+    "emitWarnings": true,
+    "emitUnmatchedList": true
+  }
+}

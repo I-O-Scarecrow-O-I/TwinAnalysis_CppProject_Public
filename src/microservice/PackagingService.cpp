@@ -1,0 +1,615 @@
+﻿#include <httplib.h>
+#include <utils/json.hpp>
+#include <utils/ProcessRunner.h>
+#include <picosha2.h>
+#include "ResultUploader.h"
+
+#include <fstream>
+#include <filesystem>
+#include <cstdio>
+#include <vector>
+#include <string>
+#include <thread>
+#include <sstream>
+#include <iomanip>
+#include<cstdint>
+#include <filesystem>
+
+#include <mz.h>
+#include <mz_zip.h>
+#include <mz_strm_os.h>    // 文件流
+#include <mz_strm.h>     // 使用 Z_DEFLATED 等宏
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+
+// ========== 宏配置（由 CMake 注入） ==========
+#ifndef PROJECT_ROOT
+#error "PROJECT_ROOT must be defined by CMake"
+#endif
+
+#ifndef TWIN_PACKAGING_CLI_PATH
+#error "TWIN_PACKAGING_CLI_PATH is not defined. Inject it from CMake via target_compile_definitions()."
+#endif
+
+#ifndef MICROSERVICE_HOST
+#define MICROSERVICE_HOST "0.0.0.0"
+#endif
+
+#ifndef MICROSERVICE_PORT
+#define MICROSERVICE_PORT "8080"
+#endif
+
+#ifndef TWIN_PUBLIC_BASE_URL
+// 必须是 ADP 能访问到你的服务的 URL（ZeroTier IP + port）
+#define TWIN_PUBLIC_BASE_URL ""
+#endif
+
+#ifndef TWIN_ADP_BASE_URL
+#define TWIN_ADP_BASE_URL ""
+#endif
+
+#ifndef TWIN_ADP_CALLBACK_BASE_URL
+#define TWIN_ADP_CALLBACK_BASE_URL ""
+#endif
+
+#ifndef TWIN_ADP_CALLBACK_PATH
+#define TWIN_ADP_CALLBACK_PATH "/internal/module2/callbacks/wrapper-codegen"
+#endif
+
+#ifndef TWIN_DEFAULT_UPLOAD_DIR_NAME
+#define TWIN_DEFAULT_UPLOAD_DIR_NAME "Upload_Result"
+#endif
+
+#ifndef TWIN_ENABLE_ADP_CALLBACK
+#define TWIN_ENABLE_ADP_CALLBACK 0
+#endif
+
+namespace fs = std::filesystem;
+using json = nlohmann::ordered_json;
+
+// ========== 行业规范：端口解析要可诊断 ==========
+static int parsePortOrDie(const std::string& s) {
+    auto trim = [](std::string v) {
+        size_t b = v.find_first_not_of(" \t\r\n\"");
+        size_t e = v.find_last_not_of(" \t\r\n\"");
+        if (b == std::string::npos) return std::string{};
+        return v.substr(b, e - b + 1);
+        };
+
+    std::string t = trim(s);
+    if (t.empty()) throw std::invalid_argument("empty port");
+    for (char c : t) {
+        if (c < '0' || c > '9') throw std::invalid_argument("non-numeric port: " + t);
+    }
+    int p = std::stoi(t);
+    if (p < 1 || p > 65535) throw std::invalid_argument("port out of range: " + std::to_string(p));
+    return p;
+}
+
+// ========== 新增：artifact 下载接口（ADP 会用 artifactUri 下载 ZIP） ==========
+void handleDownloadArtifact(const httplib::Request& req, httplib::Response& res) {
+    const std::string root = PROJECT_ROOT;
+
+    std::string artifactId = req.matches[1];
+
+    // 安全：禁止目录穿越
+    if (artifactId.find("..") != std::string::npos || artifactId.find('\\') != std::string::npos) {
+        res.status = 400;
+        res.set_content(R"({"error":"invalid artifactId"})", "application/json");
+        return;
+    }
+
+    fs::path zipPath = fs::path(root) / "Upload_Result" / artifactId;
+    if (!fs::exists(zipPath)) {
+        res.status = 404;
+        res.set_content(R"({"error":"artifact not found"})", "application/json");
+        return;
+    }
+
+    std::ifstream f(zipPath.string(), std::ios::binary);
+    if (!f.is_open()) {
+        res.status = 500;
+        res.set_content(R"({"error":"failed to open artifact"})", "application/json");
+        return;
+    }
+
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    std::string body = ss.str();
+
+    res.status = 200;
+    res.set_header("Content-Disposition", ("attachment; filename=\"" + artifactId + "\"").c_str());
+    res.set_content(std::move(body), "application/zip");
+}
+
+// ========== 新增：回调 ADP（不鉴权；失败不阻断本地流程） ==========
+bool callbackAdpWrapperCodegen(const std::string& taskId,
+    bool success,
+    const std::string& artifactUri,
+    const std::string& artifactSha256,
+    const std::string& wrapperClass,
+    const std::string& modelType,
+    const std::string& runtime,
+    int fileCount,
+    const json& warnings,
+    std::string& outErr)
+{
+    outErr.clear();
+
+#if (TWIN_ENABLE_ADP_CALLBACK == 0)
+    (void)taskId; (void)success; (void)artifactUri; (void)artifactSha256;
+    (void)wrapperClass; (void)modelType; (void)runtime; (void)fileCount; (void)warnings;
+    std::cout << "[ADP] callback disabled.\n";
+    return true;
+#else
+    const std::string base = TWIN_ADP_CALLBACK_BASE_URL;
+    if (base.empty()) {
+        outErr = "TWIN_ADP_CALLBACK_BASE_URL is empty";
+        return false;
+    }
+
+    json body;
+
+    // 文档 taskId 是 int64：尽量转数字；转不了就仍传字符串（调试用）
+    try {
+        body["taskId"] = std::stoll(taskId);
+    }
+    catch (...) {
+        body["taskId"] = taskId;
+    }
+
+    body["success"] = success;
+    body["status"] = success ? "SUCCESS" : "FAILED";
+    body["projectName"] = "TwinAnalysis";
+    body["artifactUri"] = artifactUri;           // 关键：这里是 upload 接口返回的 downloadUrl
+    body["artifactType"] = "zip";
+    body["artifactSha256"] = artifactSha256;
+    body["mainClassName"] = "";
+    body["wrapperClass"] = wrapperClass;
+    body["modelType"] = modelType;
+    body["runtime"] = runtime;
+    body["modelCount"] = 1;
+    body["fileCount"] = fileCount;
+    body["files"] = json::object();
+    body["warnings"] = warnings;
+    body["errorCode"] = "";
+    body["errorMessage"] = "";
+
+    std::cout << "[ADP] POST " << base << TWIN_ADP_CALLBACK_PATH << "\n";
+    std::cout << "[ADP] body: " << body.dump(2) << "\n";
+
+    httplib::Client cli(base);
+    cli.set_connection_timeout(10);
+    cli.set_read_timeout(30);
+    cli.set_write_timeout(30);
+
+    auto resp = cli.Post(TWIN_ADP_CALLBACK_PATH, body.dump(), "application/json");
+    if (!resp) {
+        outErr = "callback request failed (no response)";
+        return false;
+    }
+    if (resp->status != 200) {
+        outErr = "HTTP " + std::to_string(resp->status) + " body=" + resp->body;
+        return false;
+    }
+
+    std::cout << "[ADP] callback OK: " << resp->body << "\n";
+    return true;
+#endif
+}
+
+static std::string getCwdString() {
+    std::error_code ec;
+    auto p = std::filesystem::current_path(ec);
+    if (ec) return "(unknown)";
+    return p.string();
+}
+
+// 使用 minizip-ng 压缩文件夹
+void zipFolder(const fs::path& rootDir, const fs::path& outputZip) {
+    // 创建 zip 句柄
+    void* zipHandle = mz_zip_create();
+    if (!zipHandle) throw std::runtime_error("mz_zip_create failed");
+
+    // 创建文件流
+    void* fileStream = mz_stream_os_create();
+    if (!fileStream) {
+        mz_zip_delete(&zipHandle);
+        throw std::runtime_error("mz_stream_os_create failed");
+    }
+
+    // 打开文件流（写入模式）
+    int32_t err = mz_stream_os_open(fileStream, outputZip.string().c_str(),
+        MZ_OPEN_MODE_CREATE | MZ_OPEN_MODE_WRITE);
+    if (err != MZ_OK) {
+        mz_stream_os_delete(&fileStream);
+        mz_zip_delete(&zipHandle);
+        throw std::runtime_error("Cannot open output file stream");
+    }
+
+    // 将流与 zip 关联
+    err = mz_zip_open(zipHandle, fileStream, MZ_OPEN_MODE_CREATE | MZ_OPEN_MODE_WRITE);
+    if (err != MZ_OK) {
+        mz_stream_os_close(fileStream);
+        mz_stream_os_delete(&fileStream);
+        mz_zip_delete(&zipHandle);
+        throw std::runtime_error("mz_zip_open failed");
+    }
+
+    for (const auto& entry : fs::recursive_directory_iterator(rootDir)) {
+        if (entry.is_directory()) continue;
+
+        //fs::path relativePath = fs::relative(entry.path(), rootDir.parent_path());
+        fs::path relativePath = fs::relative(entry.path(), rootDir);
+        std::string pathInZip = relativePath.string();
+        std::replace(pathInZip.begin(), pathInZip.end(), '\\', '/');
+
+        // 设置文件信息
+        mz_zip_file fileInfo = {};
+        fileInfo.filename = pathInZip.c_str();
+        fileInfo.modified_date = time(nullptr);
+        //fileInfo.version_madeby = MZ_VERSION_MADEBY;
+
+        err = mz_zip_entry_write_open(zipHandle, &fileInfo, MZ_COMPRESS_LEVEL_DEFAULT, 0, nullptr);
+        if (err != MZ_OK) {
+            mz_zip_close(zipHandle);
+            mz_stream_os_close(fileStream);
+            mz_stream_os_delete(&fileStream);
+            mz_zip_delete(&zipHandle);
+            throw std::runtime_error("mz_zip_entry_write_open failed");
+        }
+
+        std::ifstream ifs(entry.path(), std::ios::binary);
+        std::vector<char> buf(65536);
+        while (ifs) {
+            ifs.read(buf.data(), buf.size());
+            if (ifs.gcount() > 0) {
+                int32_t written = mz_zip_entry_write(zipHandle, buf.data(), ifs.gcount());
+                if (written != ifs.gcount()) {
+                    mz_zip_entry_close(zipHandle);
+                    mz_zip_close(zipHandle);
+                    mz_stream_os_close(fileStream);
+                    mz_stream_os_delete(&fileStream);
+                    mz_zip_delete(&zipHandle);
+                    throw std::runtime_error("mz_zip_entry_write failed");
+                }
+            }
+        }
+        mz_zip_entry_close(zipHandle);
+    }
+
+    mz_zip_close(zipHandle);
+    mz_stream_os_close(fileStream);
+    mz_stream_os_delete(&fileStream);
+    mz_zip_delete(&zipHandle);
+}
+
+// SHA256 计算（使用 picosha2）
+std::string sha256File(const std::string& filePath) {
+    std::ifstream ifs(filePath, std::ios::binary);
+    std::vector<unsigned char> hash(picosha2::k_digest_size);
+    picosha2::hash256(ifs, hash.begin(), hash.end());
+    std::ostringstream oss;
+    for (auto c : hash) oss << std::hex << std::setw(2) << std::setfill('0') << (int)c;
+    return oss.str();
+}
+
+// ========== 工具函数 ==========
+// 使用 cpp-httplib 下载文件
+bool downloadFile(const std::string& url, const std::string& localPath) {
+    // 转义路径（避免空格等特殊字符）
+    std::string escapedPath = localPath;
+    std::replace(escapedPath.begin(), escapedPath.end(), '\\', '/');
+
+    std::string command = "curl -L --connect-timeout 10 --max-time 60 -o \"" + escapedPath + "\" \"" + url + "\"";
+    std::cout << "[DOWNLOAD] Executing: " << command << std::endl;
+    int ret = system(command.c_str());
+    if (ret != 0) {
+        std::cerr << "[DOWNLOAD] curl failed with code " << ret << std::endl;
+        return false;
+    }
+    // 验证文件是否非空
+    std::ifstream ifs(localPath, std::ios::binary | std::ios::ate);
+    if (!ifs || ifs.tellg() == 0) {
+        std::cerr << "[DOWNLOAD] Downloaded file is empty or not found." << std::endl;
+        return false;
+    }
+    std::cout << "[DOWNLOAD] Downloaded file size: " << ifs.tellg() << " bytes" << std::endl;
+    std::cout << "[DOWNLOAD] SHA256: " << sha256File(localPath) << std::endl;
+    return true;
+}
+
+// 调用 AiModelPackagingCLI（跨平台）
+bool runPackagingCLI(const std::string& requestFile,
+    const std::string& modelPath,
+    const std::string& outDir)
+{
+    namespace fs = std::filesystem;
+
+    const std::string cliPath = TWIN_PACKAGING_CLI_PATH;
+
+    // 严格：不查找、不fallback，只校验 CMake 注入的路径是否存在
+    std::error_code ec;
+    if (!fs::exists(cliPath, ec)) {
+        std::cerr << "[CLI] CLI not found at build-defined path: " << cliPath << "\n"
+            << "[CLI] cwd=" << getCwdString() << "\n";
+        return false;
+    }
+
+    std::vector<std::string> args = {
+        cliPath,
+        "--request", requestFile,
+        "--model", modelPath,
+        "--out", outDir
+    };
+
+    std::cout << "[CLI] Running: " << ProcessRunner::argsToString(args) << "\n";
+    std::cout << "[CLI] cwd=" << getCwdString() << "\n";
+
+    ProcessRunner::Result result = ProcessRunner::run(args);
+    if (!result.errorMsg.empty()) {
+        std::cerr << "[CLI] Launch failed: " << result.errorMsg << "\n";
+        return false;
+    }
+
+    if (!result.stdOut.empty()) std::cout << result.stdOut << std::flush;
+    if (!result.stdErr.empty()) std::cerr << result.stdErr << std::flush;
+    std::cout << "[CLI] Exit code: " << result.exitCode << "\n";
+    return result.exitCode == 0;
+}
+
+void collectRuntimeFiles(const std::string& resultDir,         // 例如 Upload_Result
+    const std::string& framework,         // ONNX / PyTorch
+    const std::string& destDir) {         // 临时打包目录（压缩用）
+    namespace fs = std::filesystem;
+    std::string packResultDir = resultDir + "/Packaging_Result";
+
+    // 创建目录
+    fs::create_directories(destDir + "/generated-src/include");
+    fs::create_directories(destDir + "/generated-src/src");
+    fs::create_directories(destDir + "/include/utils");
+
+    // 1. 复制 generated-src
+    fs::copy(packResultDir + "/generated-src/include", destDir + "/generated-src/include",
+        fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+    fs::copy(packResultDir + "/generated-src/src", destDir + "/generated-src/src",
+        fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+
+    // 2. 复制 IModelBlock.h
+    fs::path srcModelBlock = std::string(PROJECT_ROOT) + "/include/IModelBlock.h";
+    fs::path dstModelBlock = destDir + "/include/IModelBlock.h";
+    fs::copy_file(srcModelBlock, dstModelBlock, fs::copy_options::overwrite_existing);
+
+    // 3. 复制 json.hpp
+    fs::path srcJson = std::string(PROJECT_ROOT) + "/include/utils/json.hpp";
+    fs::path dstJson = destDir + "/include/utils/json.hpp";
+    fs::copy_file(srcJson, dstJson, fs::copy_options::overwrite_existing);
+
+    // 4. 复制 Detected_Model_Meta.json
+    fs::path srcMeta = packResultDir + "/Detected_Model_Meta.json";
+    fs::path dstMeta = destDir + "/Detected_Model_Meta.json";
+    fs::copy_file(srcMeta, dstMeta, fs::copy_options::overwrite_existing);
+
+    // 框架特定的运行时文件（如果不在 generated-src 中）
+    // 一般情况下 ONNX 的 OnnxModelRuntime.h/.cpp 已在 generated-src 中，
+    // PyTorch 的 TorchModelRuntime.h/.cpp 同理。如果缺失，可在此补充。
+    // 当前暂无额外文件需要复制。
+
+    // 注意：不复制 generated-docs/ 和 raw-extract/
+}
+
+// ========== HTTP 处理函数 ==========
+void handlePackaging(const httplib::Request& req, httplib::Response& res) {
+    json requestBody;
+    try {
+        requestBody = json::parse(req.body);
+    }
+    catch (...) {
+        res.status = 400;
+        res.set_content(R"({"error":"Invalid JSON"})", "application/json");
+        return;
+    }
+
+    // --- 原有逻辑：从请求体读字段 ---
+    std::string taskId = requestBody.value("taskId", "unknown");
+    std::string blockName = requestBody["block"].value("blockName", "unnamed");
+    std::string implType = requestBody["implementation"].value("type", "ONNX");
+    std::string fileUri = requestBody["implementation"].value("fileUri", "");
+    std::string implFilename = requestBody["implementation"].value("filename", "model.onnx");
+
+    // 使用项目根目录（由 CMake 注入的 PROJECT_ROOT 宏）
+    std::string root = PROJECT_ROOT;
+    std::filesystem::create_directories(root + "/models");
+    std::filesystem::create_directories(root + "/requests");
+    std::filesystem::create_directories(root + "/Upload_Result");
+
+    // 1. 下载模型
+    std::string localModel = root + "/models/" + implFilename;
+    std::cout << "[PACKAGING] Downloading model from " << fileUri << " to " << localModel << std::endl;
+    if (!downloadFile(fileUri, localModel)) {
+        res.status = 500;
+        res.set_content(R"({"error":"Model download failed"})", "application/json");
+        return;
+    }
+
+    // 完整性校验（如果请求中提供了 contentSha256）
+    std::string expectedSha = requestBody["implementation"].value("contentSha256", "");
+    if (!expectedSha.empty()) {
+        std::string actualSha = sha256File(localModel);
+        if (actualSha != expectedSha) {
+            // 在服务启动时打印：
+#ifdef _WIN32
+            std::cerr << "[BOOT] PID=" << GetCurrentProcessId() << std::endl;
+#endif
+            std::cerr << "[PACKAGING] SHA256 mismatch!\n"
+                << "  expectedSha256: " << expectedSha << "\n"
+                << "  actualSha256:   " << actualSha << "\n"
+                << "  localPath:      " << localModel << "\n"
+                << "  fileSize:       " << std::filesystem::file_size(localModel) << "\n"
+                << std::endl;
+
+            res.status = 500;
+            res.set_content(R"({"error":"Downloaded model integrity check failed"})", "application/json");
+            return;
+        }
+        std::cout << "[PACKAGING] SHA256 verification passed." << std::endl;
+    }
+    else {
+        std::cout << "[PACKAGING] No contentSha256 provided, skipping integrity check." << std::endl;
+    }
+
+    // 2. 保存请求 JSON（格式化输出）
+    std::string requestFilePath = root + "/requests/" + taskId + ".json";
+    {
+        std::ofstream ofs(requestFilePath);
+        if (!ofs) {
+            res.status = 500;
+            res.set_content(R"({"error":"Failed to save request file"})", "application/json");
+            return;
+        }
+        // 将 JSON 重新格式化：2 空格缩进
+        std::string formatted = requestBody.dump(2);
+        ofs << formatted;
+        ofs.close();
+    }
+    std::cout << "[PACKAGING] Request saved to " << requestFilePath << std::endl;
+
+    // 3. 调用 CLI，输出到 Upload_Result
+    std::string outDir = root + "/" + std::string(TWIN_DEFAULT_UPLOAD_DIR_NAME);
+    std::cout << "[PACKAGING] Calling CLI...\n";
+    if (!runPackagingCLI(requestFilePath, localModel, outDir)) {
+        res.status = 500;
+        res.set_content(R"({"error":"Packaging failed"})", "application/json");
+        return;
+    }
+
+    // 4. 检查 Packaging_Result 是否生成, 并收集运行时文件到临时打包目录
+    std::string packagingResultDir = outDir + "/Packaging_Result";
+    if (!std::filesystem::exists(packagingResultDir)) {
+        res.status = 500;
+        res.set_content(R"({"error":"Packaging_Result not found after CLI run"})", "application/json");
+        return;
+    }
+
+    std::string packageDir = root + "/Upload_Result" + "/runtime_package";
+    std::filesystem::remove_all(packageDir);  // 清理旧目录
+    collectRuntimeFiles(outDir, implType, packageDir);
+    std::filesystem::remove_all(packagingResultDir);
+
+    // 5. 压缩
+    std::string zipName = blockName + "_packaging_result.zip";
+    std::string zipPath = outDir + "/" + zipName;
+    std::cout << "[PACKAGING] Creating ZIP: " << zipPath << std::endl;
+    try {
+        zipFolder(packageDir, zipPath);
+    }
+    catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(std::string("{\"error\":\"ZIP creation failed: ") + e.what() + "\"}", "application/json");
+        return;
+    }
+    std::filesystem::remove_all(packageDir);
+
+    // 6. SHA256
+    std::string sha256 = sha256File(zipPath);
+    std::cout << "[PACKAGING] SHA256: " << sha256 << std::endl;
+
+    // 7. 上传 MinIO（若失败则 fallback 到本地文件）
+// NOTE: 先调用上传接口 http://10.95.210.240:8080/api/v1/files/upload
+    std::string uploadedUri = uploadResultZipViaHttp(zipPath);
+    if (uploadedUri.empty()) {
+        json fallback;
+        fallback["resultPackageUri"] = "file:///" + std::filesystem::absolute(zipPath).string();
+        fallback["resultPackageSha256"] = sha256;
+        fallback["storageType"] = "LOCAL";
+        res.set_content(fallback.dump(), "application/json");
+        std::cerr << "[Upload] upload failed, fallback to local storage.\n";
+        return;
+    }
+
+    // 8. 上传成功后回调 ADP（把 taskId 原路返回，并携带 artifactUri=downloadUrl）
+    // NOTE: 再调用回调接口 http://10.95.210.240:33000/internal/module2/callbacks/wrapper-codegen
+    std::string cbErr;
+    {
+        json warnings = json::object(); // 你可以后续回传 warnings
+        std::string wrapperClass = requestBody["generationOptions"].value("className", "");
+
+        bool cbOk = callbackAdpWrapperCodegen(
+            taskId,
+            /*success*/ true,
+            /*artifactUri*/ uploadedUri,
+            /*artifactSha256*/ sha256,
+            /*wrapperClass*/ wrapperClass,
+            /*modelType*/ implType,
+            /*runtime*/ "qt_cpp",
+            /*fileCount*/ 0,
+            warnings,
+            cbErr
+        );
+
+        if (!cbOk) {
+            // 回调失败不阻断：文件已经上传成功，仍返回 uploadedUri 方便后续人工/自动重试回调
+            json response;
+            response["resultPackageUri"] = uploadedUri;
+            response["resultPackageSha256"] = sha256;
+            response["storageType"] = "MINIO";
+            response["status"] = "SUCCEEDED";
+            response["message"] = std::string("Upload succeeded but ADP callback failed: ") + cbErr;
+            res.set_content(response.dump(), "application/json");
+            std::cerr << "[ADP] callback failed: " << cbErr << "\n";
+            return;
+        }
+    }
+
+    // 9. 成功响应
+    json response;
+    response["resultPackageUri"] = uploadedUri;              // upload 接口返回的 downloadUrl
+    response["resultPackageSha256"] = sha256;
+    response["storageType"] = "MINIO";
+    response["status"] = "SUCCEEDED";
+    res.set_content(response.dump(), "application/json");
+    std::cout << "[PACKAGING] Uploaded to MinIO and callback sent.\n";
+
+    // 所有中间文件均保留，不再删除
+}
+
+int main() {
+    #ifdef _WIN32
+        // 让 Windows 控制台用 UTF-8 显示（影响 std::cout/cerr 输出）
+        SetConsoleOutputCP(CP_UTF8);
+    #endif
+    // 保持你的原注释和逻辑：将 CWD 固定到项目根目录，确保相对路径稳定
+    std::error_code ec;
+    fs::current_path(fs::path(PROJECT_ROOT), ec);
+    if (ec) {
+        std::cerr << "[ERROR] Failed to set current working directory to PROJECT_ROOT: " << ec.message() << std::endl;
+        return 1;
+    }
+
+    httplib::Server svr;
+
+    // 原有路由：包装服务
+    svr.Post("/api/v1/packaging", handlePackaging);
+
+    // 新增路由：产物 ZIP 下载（供 ADP 通过 artifactUri 下载）
+    svr.Get(R"(/internal/module2/artifacts/(.*))", handleDownloadArtifact);
+
+    std::string listenAddr = std::string(MICROSERVICE_HOST) + ":" + std::string(MICROSERVICE_PORT);
+    std::cout << "Microservice running on http://" << listenAddr << std::endl;
+
+    int port = 0;
+    try {
+        port = parsePortOrDie(MICROSERVICE_PORT);
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[BOOT] Invalid MICROSERVICE_PORT='" << MICROSERVICE_PORT << "': " << e.what() << "\n";
+        return 1;
+    }
+
+    // 注意：svr.listen(host, port) 在失败时会返回 false，你也可以根据返回值打印错误
+    svr.listen(MICROSERVICE_HOST, port);
+    return 0;
+}

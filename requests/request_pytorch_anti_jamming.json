@@ -1,0 +1,71 @@
+{
+  "protocolVersion": "1.0",
+  "taskId": "pkg-task-ai-local-pt-anti-jamming-0003",
+  "taskType": "MODEL_PACKAGING",
+  "requestTime": "2026-05-05T18:00:00+08:00",
+  "block": {
+    "blockKey": "BlockDefinition:LocalTest::PyTorchAntiJamming",
+    "blockName": "PyTorchAntiJamming",
+    "packagePath": "LocalTest",
+    "description": "Local PyTorch anti-jamming model (from anti_jamming.pt / best_anti_jamming_corr.pth)"
+  },
+  "implementation": {
+    "type": "PyTorch",
+    "filename": "models/pytorch_model/anti_jamming.pt",
+    "fileUri": "file://models/pytorch_model/anti_jamming.pt",
+    "contentSha256": null,
+    "deliveryPackageRelativePath": "models/pytorch_model/anti_jamming.pt"
+  },
+  "portMapping": {
+    "p_in": { "input": "x.1" },
+    "p_out": { "output": "117" }
+  },
+  "expectedBindings": [
+    {
+      "sysmlPath": "p_in.input",
+      "target": {
+        "name": "x.1",
+        "kind": "tensor",
+        "role": "input",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "input",
+      "expectedType": "double",
+      "expectedShape": [ -1 ],
+      "expectedPrecision": "float32"
+    },
+    {
+      "sysmlPath": "p_out.output",
+      "target": {
+        "name": "117",
+        "kind": "tensor",
+        "role": "output",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "output",
+      "expectedType": "double",
+      "expectedShape": [ -1 ],
+      "expectedPrecision": "float32"
+    }
+  ],
+  "typeSystem": {
+    "primitiveTypes": {},
+    "dataTypes": {}
+  },
+  "sysmlInterface": {
+    "ports": [],
+    "valueProperties": [],
+    "connections": []
+  },
+  "generationOptions": {
+    "language": "C++",
+    "cppStandard": "C++17",
+    "namespace": "twin.generated",
+    "className": "PyTorchAntiJammingWrapper",
+    "emitMappingTable": true,
+    "emitWarnings": true,
+    "emitUnmatchedList": true
+  }
+}

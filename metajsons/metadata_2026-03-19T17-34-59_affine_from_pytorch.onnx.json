@@ -1,0 +1,62 @@
+{
+  "metaData": {
+    "modelName": "main_graph",
+    "producerName": "pytorch",
+    "domain": "",
+    "version": 1,
+    "description": ""
+  },
+  "inputs": [
+    {
+      "name": "input",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [
+        1,
+        4
+      ],
+      "shapeDescription": [
+        "BatchSize",
+        "Channels"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "output_0",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [
+        1,
+        4
+      ],
+      "shapeDescription": [
+        "BatchSize",
+        "Channels"
+      ]
+    }
+  ],
+  "parameters": {
+    "requiresCUDA": false
+  },
+  "statistics": {
+    "totalInputs": 1,
+    "totalOutputs": 1,
+    "dynamicInputs": 0,
+    "dynamicOutputs": 0
+  },
+  "modelFileInfo": {
+    "path": "./models/affine_from_pytorch.onnx",
+    "sizeBytes": 1539,
+    "sizeMB": 0.0014677047729492188
+  },
+  "parserInfo": {
+    "version": "0.1.0",
+    "generatedAt": "2026-03-19T17:34:59",
+    "tool": "ONNX Model Parser"
+  }
+}

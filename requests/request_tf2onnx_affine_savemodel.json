@@ -1,0 +1,71 @@
+﻿{
+    "protocolVersion": "1.0",
+    "taskId": "pkg-task-onnx-tf2onnx-0001",
+    "taskType": "MODEL_PACKAGING",
+    "requestTime": "2026-05-06T15:00:00+08:00",
+    "block": {
+        "blockKey": "BlockDefinition:LocalTest::OnnxTf2onnx",
+        "blockName": "OnnxTf2onnx",
+        "packagePath": "LocalTest",
+        "description": "ONNX model converted from TensorFlow via tf2onnx"
+    },
+    "implementation": {
+        "type": "ONNX",
+        "filename": "models/tf2onnx/model.onnx",
+        "fileUri": "file://models/tf2onnx/model.onnx",
+        "contentSha256": null,
+        "deliveryPackageRelativePath": "models/tf2onnx/model.onnx"
+    },
+    "portMapping": {
+        "p_in": { "x": "input" },
+        "p_out": { "y": "output_0" }
+    },
+    "expectedBindings": [
+        {
+            "sysmlPath": "p_in.x",
+            "target": {
+                "name": "input",
+                "kind": "tensor",
+                "role": "input",
+                "index": null,
+                "slice": null
+            },
+            "expectedDirection": "input",
+            "expectedType": "double",
+            "expectedShape": [ -1, 4 ],
+            "expectedPrecision": "float32"
+        },
+        {
+            "sysmlPath": "p_out.y",
+            "target": {
+                "name": "output_0",
+                "kind": "tensor",
+                "role": "output",
+                "index": null,
+                "slice": null
+            },
+            "expectedDirection": "output",
+            "expectedType": "double",
+            "expectedShape": [ -1, 4 ],
+            "expectedPrecision": "float32"
+        }
+    ],
+    "typeSystem": {
+        "primitiveTypes": {},
+        "dataTypes": {}
+    },
+    "sysmlInterface": {
+        "ports": [],
+        "valueProperties": [],
+        "connections": []
+    },
+    "generationOptions": {
+        "language": "C++",
+        "cppStandard": "C++17",
+        "namespace": "twin.generated",
+        "className": "OnnxTf2onnxWrapper",
+        "emitMappingTable": true,
+        "emitWarnings": true,
+        "emitUnmatchedList": true
+    }
+}

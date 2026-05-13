@@ -1,0 +1,60 @@
+{
+  "metaData": {
+    "modelName": "tf2onnx",
+    "producerName": "tf2onnx",
+    "domain": "",
+    "version": 1,
+    "description": ""
+  },
+  "inputs": [
+    {
+      "name": "input_tensor",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [
+        -1,
+        3,
+        224,
+        224
+      ],
+      "shapeDescription": [
+        "BatchSize",
+        "Channels",
+        "Height",
+        "Width"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "output_0",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [],
+      "shapeDescription": []
+    }
+  ],
+  "parameters": {
+    "requiresCUDA": false
+  },
+  "statistics": {
+    "totalInputs": 1,
+    "totalOutputs": 1,
+    "dynamicInputs": 1,
+    "dynamicOutputs": 0
+  },
+  "modelFileInfo": {
+    "path": "./models/tensor_model.onnx",
+    "sizeBytes": 281,
+    "sizeMB": 0.00026798248291015625
+  },
+  "parserInfo": {
+    "version": "0.1.0",
+    "generatedAt": "2026-03-09T16:37:35",
+    "tool": "ONNX Model Parser"
+  }
+}

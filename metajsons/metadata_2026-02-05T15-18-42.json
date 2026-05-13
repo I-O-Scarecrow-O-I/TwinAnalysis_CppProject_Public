@@ -1,0 +1,66 @@
+{
+  "metaData": {
+    "modelName": "resnet50-v2-7",
+    "producerName": "Unknown",
+    "domain": "",
+    "version": 1,
+    "description": ""
+  },
+  "inputs": [
+    {
+      "name": "data",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [
+        -1,
+        3,
+        224,
+        224
+      ],
+      "shapeDescription": [
+        "BatchSize",
+        "Channels",
+        "Height",
+        "Width"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "resnetv24_dense0_fwd",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [
+        -1,
+        1000
+      ],
+      "shapeDescription": [
+        "BatchSize",
+        "Channels"
+      ]
+    }
+  ],
+  "parameters": {
+    "requiresCUDA": false
+  },
+  "statistics": {
+    "totalInputs": 1,
+    "totalOutputs": 1,
+    "dynamicInputs": 1,
+    "dynamicOutputs": 1
+  },
+  "modelFileInfo": {
+    "path": "./models/resnet50-v2-7.onnx",
+    "sizeBytes": 102442452,
+    "sizeMB": 97.69673538208008
+  },
+  "parserInfo": {
+    "version": "0.1.0",
+    "generatedAt": "2026-02-05T15:18:42",
+    "tool": "ONNX Model Parser"
+  }
+}

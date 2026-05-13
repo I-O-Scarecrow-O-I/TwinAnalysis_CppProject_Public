@@ -1,0 +1,77 @@
+{
+  "protocolVersion": "1.0",
+  "taskId": "test-add-model",
+  "block": {
+    "blockKey": "AddModelBlock",
+    "blockName": "AddModelBlock"
+  },
+  "implementation": {
+    "type": "ONNX",
+    "filename": "add_model.onnx",
+    "deliveryPackageRelativePath": "models/add_model.onnx"
+  },
+  "generationOptions": {
+    "language": "C++",
+    "cppStandard": "C++17",
+    "namespace": "twin.generated",
+    "className": "AddModelWrapper",
+    "emitMappingTable": true,
+    "emitWarnings": true,
+    "emitUnmatchedList": true
+  },
+
+  "expectedBindings": [
+    {
+      "sysmlPath": "p_in.x",
+      "target": {
+        "name": "a",
+        "kind": "tensor",
+        "role": "input",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "input",
+      "expectedType": "double",
+      "expectedPrecision": "float32",
+      "expectedShape": [ -1 ]
+    },
+    {
+      "sysmlPath": "p_in.y",
+      "target": {
+        "name": "b",
+        "kind": "tensor",
+        "role": "input",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "input",
+      "expectedType": "double",
+      "expectedPrecision": "float32",
+      "expectedShape": [ -1 ]
+    },
+    {
+      "sysmlPath": "p_out.z",
+      "target": {
+        "name": "c",
+        "kind": "tensor",
+        "role": "output",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "output",
+      "expectedType": "double",
+      "expectedPrecision": "float32",
+      "expectedShape": [ -1 ]
+    }
+  ],
+
+  "portMapping": {
+    "p_in": {
+      "x": "a",
+      "y": "b"
+    },
+    "p_out": {
+      "z": "c"
+    }
+  }
+}

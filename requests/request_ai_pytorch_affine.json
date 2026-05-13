@@ -1,0 +1,85 @@
+{
+  "protocolVersion": "1.0",
+  "taskId": "pkg-task-ai-local-pt-0001",
+  "taskType": "MODEL_PACKAGING",
+  "requestTime": "2026-03-13T10:00:00+08:00",
+  "block": {
+    "blockKey": "BlockDefinition:LocalTest::PyTorchAffine",
+    "blockName": "PyTorchAffine",
+    "packagePath": "LocalTest",
+    "description": "Local PyTorch affine test model"
+  },
+  "implementation": {
+    "type": "PyTorch",
+    "filename": "pt_models/affine_ts.pt",
+    "fileUri": "file://pt_models/affine_ts.pt",
+    "contentSha256": null,
+    "deliveryPackageRelativePath": "models/affine_ts.pt"
+  },
+  "portMapping": {
+    "p_in": { "x": "input" },
+    "p_out": { "y": "output_0" }
+  },
+  "expectedBindings": [
+    {
+      "sysmlPath": "p_in.x",
+      "target": {
+        "name": "input",
+        "kind": "tensor",
+        "role": "input",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "input",
+      "expectedType": "double",
+      "expectedShape": [ 1, 4 ],
+      "expectedPrecision": "float32"
+    },
+    {
+      "sysmlPath": "p_out.y",
+      "target": {
+        "name": "output_0",
+        "kind": "tensor",
+        "role": "output",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "output",
+      "expectedType": "double",
+      "expectedShape": [ 1, 4 ],
+      "expectedPrecision": "float32"
+    },
+    {
+      "sysmlPath": "p_out.y0",
+      "target": {
+        "name": "output_0",
+        "kind": "tensor_element",
+        "role": "output",
+        "index": [ 0 ],
+        "slice": null
+      },
+      "expectedDirection": "output",
+      "expectedType": "double",
+      "expectedShape": [ 1 ],
+      "expectedPrecision": "float32"
+    }
+  ],
+  "typeSystem": {
+    "primitiveTypes": {},
+    "dataTypes": {}
+  },
+  "sysmlInterface": {
+    "ports": [],
+    "valueProperties": [],
+    "connections": []
+  },
+  "generationOptions": {
+    "language": "C++",
+    "cppStandard": "C++17",
+    "namespace": "twin.generated",
+    "className": "PyTorchAffineWrapper",
+    "emitMappingTable": true,
+    "emitWarnings": true,
+    "emitUnmatchedList": true
+  }
+}

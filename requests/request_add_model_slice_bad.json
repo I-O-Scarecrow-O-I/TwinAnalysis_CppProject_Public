@@ -1,0 +1,38 @@
+{
+  "protocolVersion": "1.0",
+  "taskId": "tc_add_model_slice_invalid",
+  "block": {
+    "key": "block_key",
+    "name": "block_name"
+  },
+  "implementation": {
+    "type": "ONNX",
+    "filename": "add_model.onnx",
+    "deliveryPackageRelativePath": "model/add_model.onnx"
+  },
+  "expectedBindings": [
+    {
+      "sysmlPath": "p_in.x_bad_slice",
+      "target": {
+        "name": "a",
+        "kind": "tensor_slice",
+        "role": "input",
+        "index": null,
+        "slice": { "start": -1, "length": 0 }
+      },
+      "expectedDirection": "input",
+      "expectedType": "double",
+      "expectedShape": [ 3 ],
+      "expectedPrecision": "float32"
+    }
+  ],
+  "generationOptions": {
+    "language": "C++",
+    "cppStandard": "C++17",
+    "nameSpace": "twin.generated",
+    "className": "AddModelWrapper",
+    "emitMappingTable": true,
+    "emitWarnings": true,
+    "emitUnmatchedList": true
+  }
+}

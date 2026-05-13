@@ -1,0 +1,71 @@
+{
+  "protocolVersion": "1.0",
+  "taskId": "pkg-task-ai-local-tf-0001",
+  "taskType": "MODEL_PACKAGING",
+  "requestTime": "2026-05-04T10:00:00+08:00",
+  "block": {
+    "blockKey": "BlockDefinition:LocalTest::TFAffine",
+    "blockName": "TFAffineModel",
+    "packagePath": "LocalTest",
+    "description": "Local TensorFlow affine (linear) test model"
+  },
+  "implementation": {
+    "type": "TensorFlow",
+    "filename": "tf_models/affine_saved_model",
+    "fileUri": "file://tf_models/affine_saved_model",
+    "contentSha256": null,
+    "deliveryPackageRelativePath": "models/tf_models/affine_saved_model"
+  },
+  "portMapping": {
+    "p_in":  { "x": "serving_default_input_1" },
+    "p_out": { "y": "StatefulPartitionedCall" }
+  },
+  "expectedBindings": [
+    {
+      "sysmlPath": "p_in.x",
+      "target": {
+        "name": "serving_default_input_1",
+        "kind": "tensor",
+        "role": "input",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "input",
+      "expectedType": "double",
+      "expectedShape": [1, 4],
+      "expectedPrecision": "float32"
+    },
+    {
+      "sysmlPath": "p_out.y",
+      "target": {
+        "name": "StatefulPartitionedCall",
+        "kind": "tensor",
+        "role": "output",
+        "index": null,
+        "slice": null
+      },
+      "expectedDirection": "output",
+      "expectedType": "double",
+      "expectedShape": [1, 4],
+      "expectedPrecision": "float32"
+    }
+  ],
+  "typeSystem": {
+    "primitiveTypes": {},
+    "dataTypes": {}
+  },
+  "sysmlInterface": {
+    "ports": [],
+    "valueProperties": [],
+    "connections": []
+  },
+  "generationOptions": {
+    "language": "C++",
+    "cppStandard": "C++17",
+    "namespace": "twin.generated",
+    "className": "TFAffineWrapper",
+    "emitMappingTable": true,
+    "emitWarnings": true,
+    "emitUnmatchedList": true
+  }
+}

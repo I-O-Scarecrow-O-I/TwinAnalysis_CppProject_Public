@@ -1,0 +1,58 @@
+{
+  "metaData": {
+    "modelName": "StringIdentityVec3",
+    "producerName": "TwinAnalysis_StringTest",
+    "domain": "",
+    "version": 1,
+    "description": ""
+  },
+  "inputs": [
+    {
+      "name": "input_text",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "String",
+      "elementSize": 0,
+      "shape": [
+        3
+      ],
+      "shapeDescription": [
+        "BatchSize"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "output_text",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "String",
+      "elementSize": 0,
+      "shape": [
+        3
+      ],
+      "shapeDescription": [
+        "BatchSize"
+      ]
+    }
+  ],
+  "parameters": {
+    "requiresCUDA": false
+  },
+  "statistics": {
+    "totalInputs": 1,
+    "totalOutputs": 1,
+    "dynamicInputs": 0,
+    "dynamicOutputs": 0
+  },
+  "modelFileInfo": {
+    "path": "models/string_identity_vec3.onnx",
+    "sizeBytes": 158,
+    "sizeMB": 0.0001506805419921875
+  },
+  "parserInfo": {
+    "version": "0.1.0",
+    "generatedAt": "2026-04-02T23:11:27",
+    "tool": "ONNX Model Parser"
+  }
+}
