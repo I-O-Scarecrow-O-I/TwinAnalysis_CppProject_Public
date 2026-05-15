@@ -11,12 +11,12 @@
 #define TWIN_ENABLE_RESULT_UPLOAD 0
 #endif
 
-#ifndef TWIN_ADP_UPLOAD_BASE_URL
-#define TWIN_ADP_UPLOAD_BASE_URL ""
+#ifndef ADP_UPLOAD_BASE_URL
+#define ADP_UPLOAD_BASE_URL ""
 #endif
 
-#ifndef TWIN_ADP_UPLOAD_PATH
-#define TWIN_ADP_UPLOAD_PATH "/api/v1/files/upload"
+#ifndef ADP_UPLOAD_PATH
+#define ADP_UPLOAD_PATH "/api/v1/files/upload"
 #endif
 
 using json = nlohmann::ordered_json;
@@ -47,9 +47,10 @@ std::string uploadResultZipViaHttp(const std::string& localZipPath) {
     (void)localZipPath;
     return "";
 #else
-    const std::string baseUrl = TWIN_ADP_UPLOAD_BASE_URL;
+    const std::string baseUrl = g_config.uploadBaseUrl;
+    std::cout << "[Upload]:uploadResultZipViaHttp begin: " <<baseUrl<< ")\n";
     if (baseUrl.empty()) {
-        std::cerr << "[Upload] TWIN_ADP_UPLOAD_BASE_URL is empty, skipping upload.\n";
+        std::cerr << "[Upload] ADP_UPLOAD_BASE_URL is empty, skipping upload.\n";
         return "";
     }
 
@@ -58,7 +59,7 @@ std::string uploadResultZipViaHttp(const std::string& localZipPath) {
         return "";
     }
 
-    const std::string url = baseUrl + std::string(TWIN_ADP_UPLOAD_PATH);
+    const std::string url = baseUrl + std::string(g_config.uploadPath);
     std::cout << "[Upload] POST " << url << " (file=" << localZipPath << ")\n";
 
     CURL* curl = curl_easy_init();

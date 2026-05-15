@@ -1,0 +1,12 @@
+﻿{
+    "microservice": {
+        "host": "0.0.0.0",
+        "port": "8080"
+    },
+    "adp": {
+        "upload_base_url": "http://192.168.0.40:8080",
+        "upload_path": "/api/v1/files/upload",
+        "callback_base_url": "http://192.168.0.40:33000",
+        "callback_path": "/internal/module2/callbacks/wrapper-codegen"
+    }
+}

@@ -1,0 +1,71 @@
+﻿{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "TwinAnalysis",
+      "name": "TwinAnalysis (带模型路径)",
+      "args": [
+        "add_model.onnx"
+      ],
+      "currentDir": "${workspaceRoot}",
+      "env": {}
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "TwinAnalysis",
+      "name": "TwinAnalysis",
+      "currentDir": "${workspaceRoot}",
+      "env": {}
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "AiModelPackagingCLI",
+      "name": "AiModelPackagingCLI(带输入请求)",
+        "args": [
+            //"--request requests/request_add_model.json --model models/add_model.onnx --out packageResults_onnx"
+            //"--request requests/request_tf2onnx_affine_savemodel.json --model models/affine_savemodel.onnx --out packageResults_onnx"
+            //"--request requests/request_pytorch_anti_jamming.json --model models/anti_jamming.pt --out packageResults_pt"
+            //"--request requests/request_pytorch_anti_jamming.json --model models/anti_jamming.pt --out packageResults_pt --input-shape 1,2,10000"
+            //"--request requests/request_tensorflow_affine_savemodel.json --model models/test_tensorflow_model/affine_savemodel --out packageResults_ts"
+            "--request requests/test-local-001.json --model models/affine_savemodel.onnx --out packageResults_onnx"
+        ],
+      "currentDir": "${workspaceRoot}",
+      "env": {}
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "GeneratedWrapperTest",
+      "name": "GeneratedWrapperTest",
+      "currentDir": "${workspaceRoot}",
+      "env": {}
+    },
+    {
+        "type": "default",
+        "project": "CMakeLists.txt",
+        "projectTarget": "GeneratedWrapperTest",
+        "name": "GeneratedWrapperTest(带模型文件名)",
+        "currentDir": "${workspaceRoot}/packageResults_onnx",
+        "args": [
+            "packageResults_onnx models/add_model.onnx"
+        ],
+        "env": {}
+    },
+    {
+        "type": "default",
+        "project": "CMakeLists.txt",
+        "projectTarget": "GeneratedPyTorchWrapperTest",
+        "name": "GeneratedPyTorchWrapperTest(带模型文件名)",
+        "currentDir": "${workspaceRoot}/packageResults_pt",
+        "args": [
+            "packageResults_pt models/anti_jamming.pt"
+        ],
+        "env": {}
+    }
+  ]
+}

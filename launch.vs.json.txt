@@ -1,0 +1,55 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "TwinAnalysis.exe",
+      "name": "TwinAnalysis.exe (带模型路径)",
+      "args": [
+        "add_model.onnx"
+      ],
+      "currentDir": "${workspaceRoot}",
+      "env": {}
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "TwinAnalysis.exe",
+      "name": "TwinAnalysis.exe",
+      "currentDir": "${workspaceRoot}",
+      "env": {}
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "AiModelPackagingCLI.exe",
+      "name": "AiModelPackagingCLI.exe(带输入请求)",
+      "args": [
+        "--request requests/request_add_model.json --model models/add_model.onnx --out packageResults"
+      ],
+      "currentDir": "${workspaceRoot}",
+      "env": {}
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "GeneratedWrapperTest.exe",
+      "name": "GeneratedWrapperTest.exe",
+      "currentDir": "${workspaceRoot}",
+      "env": {}
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "GeneratedWrapperTest.exe",
+      "name": "GeneratedWrapperTest.exe(带模型文件名)",
+      "currentDir": "${workspaceRoot}",
+      "args": [
+        "packageResults\\Packaging_Result models\\add_model.onnx"
+      ],
+      "env": {}
+    }
+  ]
+}

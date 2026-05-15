@@ -3,6 +3,7 @@
 #include <utils/ProcessRunner.h>
 #include <picosha2.h>
 #include "ResultUploader.h"
+#include "ServiceConfig.h"
 
 #include <fstream>
 #include <filesystem>
@@ -19,6 +20,7 @@
 #include <mz_zip.h>
 #include <mz_strm_os.h>    // 文件流
 #include <mz_strm.h>     // 使用 Z_DEFLATED 等宏
+#include <cstdlib>   // std::getenv
 
 #ifdef _WIN32
 #include <windows.h>
@@ -30,8 +32,12 @@
 #error "PROJECT_ROOT must be defined by CMake"
 #endif
 
-#ifndef TWIN_PACKAGING_CLI_PATH
-#error "TWIN_PACKAGING_CLI_PATH is not defined. Inject it from CMake via target_compile_definitions()."
+#ifndef PACKAGING_CLI_CMAKE_PATH
+#error "PACKAGING_CLI_CMAKE_PATH is not defined. Inject it from CMake via target_compile_definitions()."
+#endif
+
+#ifndef PACKAGING_CLI_DOCKER_PATH
+#error "PACKAGING_CLI_DOCKER_PATH is not defined. Inject /opt/twin/bin/AiModelPackagingCLI."
 #endif
 
 #ifndef MICROSERVICE_HOST
@@ -42,25 +48,24 @@
 #define MICROSERVICE_PORT "8080"
 #endif
 
-#ifndef TWIN_PUBLIC_BASE_URL
-// 必须是 ADP 能访问到你的服务的 URL（ZeroTier IP + port）
-#define TWIN_PUBLIC_BASE_URL ""
+#ifndef ADP_UPLOAD_BASE_URL
+#define ADP_UPLOAD_BASE_URL "http://192.168.0.40:8080"
 #endif
 
-#ifndef TWIN_ADP_BASE_URL
-#define TWIN_ADP_BASE_URL ""
+#ifndef ADP_UPLOAD_PATH
+#define ADP_UPLOAD_PATH "/api/v1/files/upload"
 #endif
 
-#ifndef TWIN_ADP_CALLBACK_BASE_URL
-#define TWIN_ADP_CALLBACK_BASE_URL ""
+#ifndef ADP_CALLBACK_BASE_URL
+#define ADP_CALLBACK_BASE_URL "http://192.168.0.40:33000"
 #endif
 
-#ifndef TWIN_ADP_CALLBACK_PATH
-#define TWIN_ADP_CALLBACK_PATH "/internal/module2/callbacks/wrapper-codegen"
+#ifndef ADP_CALLBACK_PATH
+#define ADP_CALLBACK_PATH "/internal/module2/callbacks/wrapper-codegen"
 #endif
 
-#ifndef TWIN_DEFAULT_UPLOAD_DIR_NAME
-#define TWIN_DEFAULT_UPLOAD_DIR_NAME "Upload_Result"
+#ifndef DEFAULT_UPLOAD_DIR_NAME
+#define DEFAULT_UPLOAD_DIR_NAME "Upload_Result"
 #endif
 
 #ifndef TWIN_ENABLE_ADP_CALLBACK
@@ -69,6 +74,42 @@
 
 namespace fs = std::filesystem;
 using json = nlohmann::ordered_json;
+
+static std::string getEnvOrEmpty(const char* k) {
+    const char* v = std::getenv(k);
+    return v ? std::string(v) : std::string();
+}
+
+static void setWorkingDirectoryOrWarn() {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    // 1) runtime override
+    const std::string workdir = getEnvOrEmpty("TWIN_WORKDIR");
+    if (!workdir.empty()) {
+        fs::create_directories(fs::path(workdir), ec); // ensure exists
+        ec.clear();
+        fs::current_path(fs::path(workdir), ec);
+        if (!ec) {
+            std::cout << "[BOOT] Working directory set to TWIN_WORKDIR=" << workdir << "\n";
+            return;
+        }
+        std::cerr << "[WARN] Failed to set working dir to TWIN_WORKDIR=" << workdir
+            << " err=" << ec.message() << "\n";
+    }
+
+    // 2) fallback to PROJECT_ROOT
+    ec.clear();
+    fs::current_path(fs::path(PROJECT_ROOT), ec);
+    if (!ec) {
+        std::cout << "[BOOT] Working directory set to PROJECT_ROOT=" << PROJECT_ROOT << "\n";
+        return;
+    }
+
+    // 3) final fallback: keep current dir
+    std::cerr << "[WARN] Failed to set working dir to PROJECT_ROOT=" << PROJECT_ROOT
+        << " err=" << ec.message() << ". Continue with current working dir.\n";
+}
 
 // ========== 行业规范：端口解析要可诊断 ==========
 static int parsePortOrDie(const std::string& s) {
@@ -145,22 +186,16 @@ bool callbackAdpWrapperCodegen(const std::string& taskId,
     std::cout << "[ADP] callback disabled.\n";
     return true;
 #else
-    const std::string base = TWIN_ADP_CALLBACK_BASE_URL;
+    const std::string base = g_config.callbackBaseUrl;
     if (base.empty()) {
-        outErr = "TWIN_ADP_CALLBACK_BASE_URL is empty";
+        outErr = "ADP_CALLBACK_BASE_URL_ is empty";
         return false;
     }
 
     json body;
 
-    // 文档 taskId 是 int64：尽量转数字；转不了就仍传字符串（调试用）
-    try {
-        body["taskId"] = std::stoll(taskId);
-    }
-    catch (...) {
-        body["taskId"] = taskId;
-    }
-
+    // 文档 taskId 是 int64
+    body["taskId"] = std::stoll(taskId);
     body["success"] = success;
     body["status"] = success ? "SUCCESS" : "FAILED";
     body["projectName"] = "TwinAnalysis";
@@ -178,7 +213,7 @@ bool callbackAdpWrapperCodegen(const std::string& taskId,
     body["errorCode"] = "";
     body["errorMessage"] = "";
 
-    std::cout << "[ADP] POST " << base << TWIN_ADP_CALLBACK_PATH << "\n";
+    std::cout << "[ADP] POST " << base << g_config.callbackPath << "\n";
     std::cout << "[ADP] body: " << body.dump(2) << "\n";
 
     httplib::Client cli(base);
@@ -186,7 +221,7 @@ bool callbackAdpWrapperCodegen(const std::string& taskId,
     cli.set_read_timeout(30);
     cli.set_write_timeout(30);
 
-    auto resp = cli.Post(TWIN_ADP_CALLBACK_PATH, body.dump(), "application/json");
+    auto resp = cli.Post(g_config.callbackPath, body.dump(), "application/json");
     if (!resp) {
         outErr = "callback request failed (no response)";
         return false;
@@ -329,7 +364,14 @@ bool runPackagingCLI(const std::string& requestFile,
 {
     namespace fs = std::filesystem;
 
-    const std::string cliPath = TWIN_PACKAGING_CLI_PATH;
+    const char* envCli = std::getenv("TWIN_PACKAGING_CLI_DOCKER_PATH");
+    std::string cliPath;
+    if (envCli && std::strlen(envCli) > 0) {
+        cliPath = envCli;
+    }
+    else {
+        cliPath = PACKAGING_CLI_CMAKE_PATH;   // CMake 注入的编译宏
+    }
 
     // 严格：不查找、不fallback，只校验 CMake 注入的路径是否存在
     std::error_code ec;
@@ -361,9 +403,9 @@ bool runPackagingCLI(const std::string& requestFile,
     return result.exitCode == 0;
 }
 
-void collectRuntimeFiles(const std::string& resultDir,         // 例如 Upload_Result
-    const std::string& framework,         // ONNX / PyTorch
-    const std::string& destDir) {         // 临时打包目录（压缩用）
+void collectRuntimeFiles(const std::string& resultDir,
+    const std::string& framework,
+    const std::string& destDir) {
     namespace fs = std::filesystem;
     std::string packResultDir = resultDir + "/Packaging_Result";
 
@@ -372,26 +414,38 @@ void collectRuntimeFiles(const std::string& resultDir,         // 例如 Upload_
     fs::create_directories(destDir + "/generated-src/src");
     fs::create_directories(destDir + "/include/utils");
 
-    // 1. 复制 generated-src
-    fs::copy(packResultDir + "/generated-src/include", destDir + "/generated-src/include",
-        fs::copy_options::recursive | fs::copy_options::overwrite_existing);
-    fs::copy(packResultDir + "/generated-src/src", destDir + "/generated-src/src",
-        fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+    // 辅助 lambda：安全复制文件
+    auto safeCopyFile = [](const fs::path& src, const fs::path& dst) {
+        if (fs::exists(src)) {
+            fs::copy_file(src, dst, fs::copy_options::overwrite_existing);
+        }
+        else {
+            std::cerr << "[WARN] Source file not found, skip copy: " << src << std::endl;
+        }
+        };
+
+    // 1. 复制 generated-src（目录复制仍使用原有方式，但可加 try-catch）
+    try {
+        fs::copy(packResultDir + "/generated-src/include", destDir + "/generated-src/include",
+            fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+        fs::copy(packResultDir + "/generated-src/src", destDir + "/generated-src/src",
+            fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+    }
+    catch (const fs::filesystem_error& e) {
+        std::cerr << "[WARN] Failed to copy generated-src: " << e.what() << std::endl;
+    }
 
     // 2. 复制 IModelBlock.h
-    fs::path srcModelBlock = std::string(PROJECT_ROOT) + "/include/IModelBlock.h";
-    fs::path dstModelBlock = destDir + "/include/IModelBlock.h";
-    fs::copy_file(srcModelBlock, dstModelBlock, fs::copy_options::overwrite_existing);
+    safeCopyFile(std::string(PROJECT_ROOT) + "/include/IModelBlock.h",
+        destDir + "/include/IModelBlock.h");
 
     // 3. 复制 json.hpp
-    fs::path srcJson = std::string(PROJECT_ROOT) + "/include/utils/json.hpp";
-    fs::path dstJson = destDir + "/include/utils/json.hpp";
-    fs::copy_file(srcJson, dstJson, fs::copy_options::overwrite_existing);
+    safeCopyFile(std::string(PROJECT_ROOT) + "/include/utils/json.hpp",
+        destDir + "/include/utils/json.hpp");
 
     // 4. 复制 Detected_Model_Meta.json
-    fs::path srcMeta = packResultDir + "/Detected_Model_Meta.json";
-    fs::path dstMeta = destDir + "/Detected_Model_Meta.json";
-    fs::copy_file(srcMeta, dstMeta, fs::copy_options::overwrite_existing);
+    safeCopyFile(packResultDir + "/Detected_Model_Meta.json",
+        destDir + "/Detected_Model_Meta.json");
 
     // 框架特定的运行时文件（如果不在 generated-src 中）
     // 一般情况下 ONNX 的 OnnxModelRuntime.h/.cpp 已在 generated-src 中，
@@ -425,6 +479,15 @@ void handlePackaging(const httplib::Request& req, httplib::Response& res) {
     std::filesystem::create_directories(root + "/models");
     std::filesystem::create_directories(root + "/requests");
     std::filesystem::create_directories(root + "/Upload_Result");
+
+    try {
+        std::stoll(taskId);
+    }
+    catch (...) {
+        res.status = 400;
+        res.set_content(R"({"error":"taskId must be a valid integer"})", "application/json");
+        return;
+    }
 
     // 1. 下载模型
     std::string localModel = root + "/models/" + implFilename;
@@ -478,7 +541,7 @@ void handlePackaging(const httplib::Request& req, httplib::Response& res) {
     std::cout << "[PACKAGING] Request saved to " << requestFilePath << std::endl;
 
     // 3. 调用 CLI，输出到 Upload_Result
-    std::string outDir = root + "/" + std::string(TWIN_DEFAULT_UPLOAD_DIR_NAME);
+    std::string outDir = root + "/" + std::string(DEFAULT_UPLOAD_DIR_NAME);
     std::cout << "[PACKAGING] Calling CLI...\n";
     if (!runPackagingCLI(requestFilePath, localModel, outDir)) {
         res.status = 500;
@@ -495,13 +558,25 @@ void handlePackaging(const httplib::Request& req, httplib::Response& res) {
     }
 
     std::string packageDir = root + "/Upload_Result" + "/runtime_package";
-    std::filesystem::remove_all(packageDir);  // 清理旧目录
-    collectRuntimeFiles(outDir, implType, packageDir);
-    std::filesystem::remove_all(packagingResultDir);
-
-    // 5. 压缩
     std::string zipName = blockName + "_packaging_result.zip";
     std::string zipPath = outDir + "/" + zipName;
+
+    try {
+        std::filesystem::remove_all(packageDir);  // 清理旧目录
+        collectRuntimeFiles(outDir, implType, packageDir);
+        std::filesystem::remove_all(packagingResultDir);
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[PACKAGING] Exception during packaging: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(std::string("{\"error\":\"Unexpected error: ") + e.what() + "\"}", "application/json");
+        std::filesystem::remove(zipPath);
+        std::filesystem::remove_all(packageDir);
+        std::filesystem::remove_all(packagingResultDir); // 清理可能残留的目录
+        return;
+    }
+
+    // 5. 压缩
     std::cout << "[PACKAGING] Creating ZIP: " << zipPath << std::endl;
     try {
         zipFolder(packageDir, zipPath);
@@ -576,18 +651,25 @@ void handlePackaging(const httplib::Request& req, httplib::Response& res) {
     // 所有中间文件均保留，不再删除
 }
 
+
 int main() {
-    #ifdef _WIN32
-        // 让 Windows 控制台用 UTF-8 显示（影响 std::cout/cerr 输出）
-        SetConsoleOutputCP(CP_UTF8);
-    #endif
+#ifdef _WIN32
+    // 让 Windows 控制台用 UTF-8 显示（影响 std::cout/cerr 输出）
+    SetConsoleOutputCP(CP_UTF8);
+#endif
     // 保持你的原注释和逻辑：将 CWD 固定到项目根目录，确保相对路径稳定
     std::error_code ec;
-    fs::current_path(fs::path(PROJECT_ROOT), ec);
-    if (ec) {
-        std::cerr << "[ERROR] Failed to set current working directory to PROJECT_ROOT: " << ec.message() << std::endl;
-        return 1;
-    }
+    // fs::current_path(fs::path(PROJECT_ROOT), ec);
+    // if (ec) {
+    //     std::cerr << "[ERROR] Failed to set current working directory to PROJECT_ROOT: " << ec.message() << std::endl;
+    //     return 1;
+    // }
+    setWorkingDirectoryOrWarn();
+    // 加载配置文件（可通过环境变量指定路径）
+    const std::string configPath = getEnvOrEmpty("CONFIG_PATH").empty()
+        ? std::string(PROJECT_ROOT) + "/config.json"
+        : getEnvOrEmpty("CONFIG_PATH");
+    g_config.loadFromFile(configPath);
 
     httplib::Server svr;
 
@@ -597,19 +679,19 @@ int main() {
     // 新增路由：产物 ZIP 下载（供 ADP 通过 artifactUri 下载）
     svr.Get(R"(/internal/module2/artifacts/(.*))", handleDownloadArtifact);
 
-    std::string listenAddr = std::string(MICROSERVICE_HOST) + ":" + std::string(MICROSERVICE_PORT);
+    std::string listenAddr = std::string(g_config.host) + ":" + std::string(g_config.port);
     std::cout << "Microservice running on http://" << listenAddr << std::endl;
 
     int port = 0;
     try {
-        port = parsePortOrDie(MICROSERVICE_PORT);
+        port = parsePortOrDie(g_config.port);
     }
     catch (const std::exception& e) {
-        std::cerr << "[BOOT] Invalid MICROSERVICE_PORT='" << MICROSERVICE_PORT << "': " << e.what() << "\n";
+        std::cerr << "[BOOT] Invalid MICROSERVICE_PORT='" << g_config.port << "': " << e.what() << "\n";
         return 1;
     }
 
     // 注意：svr.listen(host, port) 在失败时会返回 false，你也可以根据返回值打印错误
-    svr.listen(MICROSERVICE_HOST, port);
+    svr.listen(g_config.host, port);
     return 0;
 }

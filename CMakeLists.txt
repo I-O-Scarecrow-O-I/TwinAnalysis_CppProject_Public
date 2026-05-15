@@ -6,8 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Feature toggles
 option(BUILD_MICROSERVICE "Build the packaging HTTP microservice" ON)
 option(TWIN_ENABLE_ONNX "Enable ONNX-based parsing/runtime support" ON)
-option(TWIN_ENABLE_TORCH "Enable PyTorch packaging workflow support" ON)
-option(TWIN_ENABLE_TF "Enable TensorFlow->ONNX packaging workflow support" ON)
+option(TWIN_ENABLE_TORCH "Enable PyTorch packaging workflow support" OFF)
+option(TWIN_ENABLE_TF "Enable TensorFlow->ONNX packaging workflow support" OFF)
 option(TWIN_ENABLE_RESULT_UPLOAD "Enable uploading result zip via HTTP endpoint" ON)
 option(TWIN_ENABLE_TESTS "Enable optional generated wrapper test targets" OFF)
 option(TWIN_ENABLE_TEST_WRAPPER_ONNX "Build generated ONNX wrapper test target" OFF)
@@ -294,6 +294,8 @@ if(BUILD_MICROSERVICE)
     # --------------------------
     set(MICROSERVICE_HOST "0.0.0.0" CACHE STRING "Microservice listen host")
     set(MICROSERVICE_PORT "8080" CACHE STRING "Microservice listen port")
+    set(MICROSERVICE_CLI_DEFAULT_PATH "/opt/twin/bin/AiModelPackagingCLI" CACHE STRING
+    "Default path to AiModelPackagingCLI executable (used when env TWIN_PACKAGING_CLI_PATH is not set)")
 
     if(WIN32)
         set(_default_cli_name "AiModelPackagingCLI.exe")
@@ -306,11 +308,11 @@ if(BUILD_MICROSERVICE)
     # ADP endpoints (confirmed by user)
     # --------------------------
     # 1) Upload API: http://10.95.210.240:8080/api/v1/files/upload
-    set(ADP_UPLOAD_BASE_URL "http://10.95.210.240:8080" CACHE STRING "ADP upload API base URL")
+    set(ADP_UPLOAD_BASE_URL "http://192.168.0.40:8080" CACHE STRING "ADP upload API base URL")
     set(ADP_UPLOAD_PATH "/api/v1/files/upload" CACHE STRING "ADP upload API path")
 
     # 2) Callback API: http://10.95.210.240:33000/internal/module2/callbacks/wrapper-codegen
-    set(ADP_CALLBACK_BASE_URL "http://10.95.210.240:33000" CACHE STRING "ADP callback base URL")
+    set(ADP_CALLBACK_BASE_URL "http://192.168.0.40:33000" CACHE STRING "ADP callback base URL")
     set(ADP_CALLBACK_PATH "/internal/module2/callbacks/wrapper-codegen" CACHE STRING "ADP callback path")
 
     # --------------------------
@@ -325,11 +327,17 @@ if(BUILD_MICROSERVICE)
     # --------------------------
     # Microservice executable
     # --------------------------
-    add_executable(PackagingMicroservice
-        src/microservice/PackagingService.cpp)
+    set(TWIN_MICROSERVICE_SOURCES
+    src/microservice/PackagingService.cpp
+    src/microservice/ResultUploader.cpp
+    src/microservice/ServiceConfig.cpp
+    )
+
+    add_executable(PackagingMicroservice ${TWIN_MICROSERVICE_SOURCES})
 
     target_include_directories(PackagingMicroservice PRIVATE
         ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/include/microservice
         ${HTTPLIB_INCLUDE_DIR}
         ${PICOSHA2_INCLUDE_DIR})
 
@@ -360,17 +368,19 @@ if(BUILD_MICROSERVICE)
     # --------------------------
     target_compile_definitions(PackagingMicroservice PRIVATE
         PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+        #PROJECT_ROOT="/opt/twin/app"
         MICROSERVICE_CLI="${MICROSERVICE_CLI}"
         MICROSERVICE_HOST="${MICROSERVICE_HOST}"
         MICROSERVICE_PORT="${MICROSERVICE_PORT}"
-        TWIN_DEFAULT_UPLOAD_DIR_NAME="Upload_Result"
-        TWIN_PACKAGING_CLI_PATH="$<TARGET_FILE:AiModelPackagingCLI>"
+        DEFAULT_UPLOAD_DIR_NAME="Upload_Result"
+        PACKAGING_CLI_CMAKE_PATH="$<TARGET_FILE:AiModelPackagingCLI>"
+        PACKAGING_CLI_DOCKER_PATH="${MICROSERVICE_CLI_DEFAULT_PATH}"
 
-        TWIN_ADP_UPLOAD_BASE_URL="${ADP_UPLOAD_BASE_URL}"
-        TWIN_ADP_UPLOAD_PATH="${ADP_UPLOAD_PATH}"
+        ADP_UPLOAD_BASE_URL="${ADP_UPLOAD_BASE_URL}"
+        ADP_UPLOAD_PATH="${ADP_UPLOAD_PATH}"
 
-        TWIN_ADP_CALLBACK_BASE_URL="${ADP_CALLBACK_BASE_URL}"
-        TWIN_ADP_CALLBACK_PATH="${ADP_CALLBACK_PATH}"
+        ADP_CALLBACK_BASE_URL="${ADP_CALLBACK_BASE_URL}"
+        ADP_CALLBACK_PATH="${ADP_CALLBACK_PATH}"
 
         TWIN_ENABLE_ADP_CALLBACK=1
     )

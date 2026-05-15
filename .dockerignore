@@ -1,0 +1,37 @@
+# VCS / IDE
+.git
+.vscode
+.idea
+
+# Build outputs / generated artifacts
+build
+build-*
+cmake-build-*
+out
+offline_release
+packageResults_*
+Upload_Result
+
+# Large sample data (optional; keep if you need them inside image)
+models
+requests
+tf_models
+tools
+
+# Python envs / caches
+**/__pycache__/
+**/*.pyc
+docker/third_party/venv_torch
+docker/third_party/venv_tf
+
+# Archives
+**/*.zip
+**/*.tar
+**/*.tar.gz
+**/*.tgz
+
+# Keep ONNX runtime bundle (we NEED it in build context)
+!docker/third_party/onnxruntime/**
+!include/
+!include/**
+!docker/config.json

@@ -1,0 +1,62 @@
+{
+  "metaData": {
+    "modelName": "tf2onnx",
+    "producerName": "tf2onnx",
+    "domain": "",
+    "version": 1,
+    "description": ""
+  },
+  "inputs": [
+    {
+      "name": "input",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [
+        -1,
+        4
+      ],
+      "shapeDescription": [
+        "BatchSize",
+        "Channels"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "output_0",
+      "index": 0,
+      "tensorType": "Tensor",
+      "dataType": "Float32",
+      "elementSize": 4,
+      "shape": [
+        -1,
+        4
+      ],
+      "shapeDescription": [
+        "BatchSize",
+        "Channels"
+      ]
+    }
+  ],
+  "parameters": {
+    "requiresCUDA": false
+  },
+  "statistics": {
+    "totalInputs": 1,
+    "totalOutputs": 1,
+    "dynamicInputs": 1,
+    "dynamicOutputs": 1
+  },
+  "modelFileInfo": {
+    "path": "O:/Code/twin-analysis-CppProject/cpp_project/models/affine_savemodel.onnx",
+    "sizeBytes": 589,
+    "sizeMB": 0.0005617141723632813
+  },
+  "parserInfo": {
+    "version": "0.1.0",
+    "generatedAt": "2026-05-14T23:14:25",
+    "tool": "ONNX Model Parser"
+  }
+}
