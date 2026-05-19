@@ -16,13 +16,10 @@ Upload_Result
 models
 requests
 tf_models
-tools
 
 # Python envs / caches
 **/__pycache__/
 **/*.pyc
-docker/third_party/venv_torch
-docker/third_party/venv_tf
 
 # Archives
 **/*.zip

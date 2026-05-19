@@ -6,8 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Feature toggles
 option(BUILD_MICROSERVICE "Build the packaging HTTP microservice" ON)
 option(TWIN_ENABLE_ONNX "Enable ONNX-based parsing/runtime support" ON)
-option(TWIN_ENABLE_TORCH "Enable PyTorch packaging workflow support" OFF)
-option(TWIN_ENABLE_TF "Enable TensorFlow->ONNX packaging workflow support" OFF)
+option(TWIN_ENABLE_TORCH "Enable PyTorch packaging workflow support" ON)
+option(TWIN_ENABLE_TF "Enable TensorFlow->ONNX packaging workflow support" ON)
 option(TWIN_ENABLE_RESULT_UPLOAD "Enable uploading result zip via HTTP endpoint" ON)
 option(TWIN_ENABLE_TESTS "Enable optional generated wrapper test targets" OFF)
 option(TWIN_ENABLE_TEST_WRAPPER_ONNX "Build generated ONNX wrapper test target" OFF)
@@ -366,8 +366,11 @@ if(BUILD_MICROSERVICE)
     # --------------------------
     # Compile-time config injection (no runtime args/env needed)
     # --------------------------
+    if(NOT DEFINED PROJECT_ROOT)
+        set(PROJECT_ROOT "${CMAKE_SOURCE_DIR}")
+    endif()
     target_compile_definitions(PackagingMicroservice PRIVATE
-        PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+        PROJECT_ROOT="${PROJECT_ROOT}"
         #PROJECT_ROOT="/opt/twin/app"
         MICROSERVICE_CLI="${MICROSERVICE_CLI}"
         MICROSERVICE_HOST="${MICROSERVICE_HOST}"

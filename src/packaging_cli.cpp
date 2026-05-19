@@ -101,7 +101,8 @@ static json callPythonMetaScript(
     }
     catch (const std::exception& e) {
         errorMsg = std::string("Failed to parse script JSON output: ") + e.what()
-            + " | stdout=" + stdoutStr.substr(0, 200);
+           + " | stdout=" + stdoutStr.substr(0, 200)
+           + " | stderr=" + (stderrStr.empty() ? "(empty)" : stderrStr.substr(0, 500));
         return json{};
     }
 }

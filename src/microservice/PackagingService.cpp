@@ -14,12 +14,12 @@
 #include <sstream>
 #include <iomanip>
 #include<cstdint>
-#include <filesystem>
 
 #include <mz.h>
 #include <mz_zip.h>
 #include <mz_strm_os.h>    // 文件流
 #include <mz_strm.h>     // 使用 Z_DEFLATED 等宏
+#include <mz_zip_rw.h>
 #include <cstdlib>   // std::getenv
 
 #ifdef _WIN32
@@ -322,6 +322,49 @@ void zipFolder(const fs::path& rootDir, const fs::path& outputZip) {
     mz_zip_delete(&zipHandle);
 }
 
+void unzipFolder(const std::filesystem::path& zipPath, const std::filesystem::path& destDir) {
+    // 确保目标目录存在
+    std::filesystem::create_directories(destDir);
+
+    // ========== 首先尝试使用 minizip-ng API ==========
+    try {
+        void* reader = mz_zip_reader_create();
+        if (!reader) {
+            throw std::runtime_error("mz_zip_reader_create failed");
+        }
+
+        int32_t err = mz_zip_reader_open_file(reader, zipPath.string().c_str());
+        if (err != MZ_OK) {
+            mz_zip_reader_delete(&reader);
+            throw std::runtime_error("Cannot open zip file for reading: " + zipPath.string());
+        }
+
+        err = mz_zip_reader_save_all(reader, destDir.string().c_str());
+        if (err != MZ_OK) {
+            mz_zip_reader_close(reader);
+            mz_zip_reader_delete(&reader);
+            throw std::runtime_error("mz_zip_reader_save_all failed for: " + zipPath.string());
+        }
+
+        mz_zip_reader_close(reader);
+        mz_zip_reader_delete(&reader);
+
+        std::cout << "[UNZIP] Successfully extracted using minizip-ng API." << std::endl;
+        return;   // 成功，直接返回
+    } catch (const std::exception& e) {
+        std::cerr << "[UNZIP] minizip-ng failed: " << e.what() << ". Falling back to system unzip command." << std::endl;
+    }
+
+    // ========== 回退方案：调用系统 unzip 命令 ==========
+    std::string command = "unzip -o \"" + zipPath.string() + "\" -d \"" + destDir.string() + "\"";
+    std::cout << "[UNZIP] Executing system command: " << command << std::endl;
+    int ret = system(command.c_str());
+    if (ret != 0) {
+        throw std::runtime_error("Both minizip-ng and system unzip failed. unzip exit code: " + std::to_string(ret));
+    }
+    std::cout << "[UNZIP] Successfully extracted using system unzip command." << std::endl;
+}
+
 // SHA256 计算（使用 picosha2）
 std::string sha256File(const std::string& filePath) {
     std::ifstream ifs(filePath, std::ios::binary);
@@ -334,33 +377,134 @@ std::string sha256File(const std::string& filePath) {
 
 // ========== 工具函数 ==========
 // 使用 cpp-httplib 下载文件
-bool downloadFile(const std::string& url, const std::string& localPath) {
-    // 转义路径（避免空格等特殊字符）
+bool downloadFile(const std::string& url, const std::string& localPath,
+    const std::string& expectedSha256,
+    std::string& finalModelPath) {
+    // 转义路径
     std::string escapedPath = localPath;
     std::replace(escapedPath.begin(), escapedPath.end(), '\\', '/');
 
-    std::string command = "curl -L --connect-timeout 10 --max-time 60 -o \"" + escapedPath + "\" \"" + url + "\"";
-    std::cout << "[DOWNLOAD] Executing: " << command << std::endl;
-    int ret = system(command.c_str());
-    if (ret != 0) {
-        std::cerr << "[DOWNLOAD] curl failed with code " << ret << std::endl;
-        return false;
+    bool isZip = (localPath.size() > 4 && localPath.substr(localPath.size() - 4) == ".zip");
+
+    if (isZip) {
+        // --- ZIP 处理：下载 → 校验 → 解压 → 删除 ZIP ---
+        std::string zipPath = localPath;                              // models/xxx.zip
+        std::string targetDir = localPath.substr(0, localPath.size() - 4); // models/xxx
+
+        // 1) 下载 ZIP
+        std::string cmd = "curl -L --connect-timeout 10 --max-time 120 -o \"" + escapedPath + "\" \"" + url + "\"";
+        std::cout << "[DOWNLOAD] Downloading ZIP: " << cmd << std::endl;
+        int ret = system(cmd.c_str());
+        if (ret != 0) {
+            std::cerr << "[DOWNLOAD] curl failed with code " << ret << std::endl;
+            return false;
+        }
+
+        // 2) SHA256 校验（若提供）
+        if (!expectedSha256.empty()) {
+            std::string actualSha = sha256File(zipPath);
+            if (actualSha != expectedSha256) {
+                // 在服务启动时打印：
+#ifdef _WIN32
+                std::cerr << "[BOOT] PID=" << GetCurrentProcessId() << std::endl;
+#endif
+                std::cerr << "[PACKAGING] SHA256 mismatch!\n"
+                    << "  expectedSha256: " << expectedSha256 << "\n"
+                    << "  actualSha256:   " << actualSha << "\n"
+                    << "  zipPath:      " << zipPath << "\n"
+                    << "  fileSize:       " << std::filesystem::file_size(zipPath) << "\n"
+                    << std::endl;
+                return false;
+            }
+            std::cout << "[PACKAGING] SHA256 verification passed." << std::endl;
+        }
+        else {
+            std::cout << "[PACKAGING] No contentSha256 provided, skipping integrity check." << std::endl;
+        }
+
+        // 3) 解压到目标目录
+        try {
+            std::filesystem::create_directories(targetDir);
+            unzipFolder(zipPath, targetDir);
+        }
+        catch (const std::exception& e) {
+            std::cerr << "[DOWNLOAD] unzip failed: " << e.what() << std::endl;
+            return false;
+        }
+
+        // 4) 如果解压后只有一个子目录，则上移其内容
+        {
+            std::vector<std::filesystem::path> entries;
+            for (const auto& entry : std::filesystem::directory_iterator(targetDir)) {
+                entries.push_back(entry.path());
+            }
+            if (entries.size() == 1 && std::filesystem::is_directory(entries[0])) {
+                std::filesystem::path singleDir = entries[0];
+                for (const auto& inner : std::filesystem::directory_iterator(singleDir)) {
+                    std::filesystem::rename(inner.path(), targetDir / inner.path().filename());
+                }
+                std::filesystem::remove(singleDir);
+                std::cout << "[DOWNLOAD] Removed extra top-level directory: " << singleDir.filename() << std::endl;
+            }
+        }
+
+        // 5) 删除 ZIP 文件
+        std::filesystem::remove(zipPath);
+        std::cout << "[DOWNLOAD] ZIP extracted to: " << targetDir << std::endl;
+        finalModelPath = targetDir;
+        return true;
+
     }
-    // 验证文件是否非空
-    std::ifstream ifs(localPath, std::ios::binary | std::ios::ate);
-    if (!ifs || ifs.tellg() == 0) {
-        std::cerr << "[DOWNLOAD] Downloaded file is empty or not found." << std::endl;
-        return false;
+    else {
+        // --- 普通单文件下载 ---
+        std::string command = "curl -L --connect-timeout 10 --max-time 60 -o \"" + escapedPath + "\" \"" + url + "\"";
+        std::cout << "[DOWNLOAD] Executing: " << command << std::endl;
+        int ret = system(command.c_str());
+        if (ret != 0) {
+            std::cerr << "[DOWNLOAD] curl failed with code " << ret << std::endl;
+            return false;
+        }
+
+        // 完整性校验（如果请求中提供了 contentSha256）
+        if (!expectedSha256.empty()) {
+            std::string actualSha = sha256File(localPath);
+            if (actualSha != expectedSha256) {
+                // 在服务启动时打印：
+#ifdef _WIN32
+                std::cerr << "[BOOT] PID=" << GetCurrentProcessId() << std::endl;
+#endif
+                std::cerr << "[PACKAGING] SHA256 mismatch!\n"
+                    << "  expectedSha256: " << expectedSha256 << "\n"
+                    << "  actualSha256:   " << actualSha << "\n"
+                    << "  localPath:      " << localPath << "\n"
+                    << "  fileSize:       " << std::filesystem::file_size(localPath) << "\n"
+                    << std::endl;
+                return false;
+            }
+            std::cout << "[PACKAGING] SHA256 verification passed." << std::endl;
+        }
+        else {
+            std::cout << "[PACKAGING] No contentSha256 provided, skipping integrity check." << std::endl;
+        }
+        
+
+        // 验证文件非空
+        std::ifstream ifs(localPath, std::ios::binary | std::ios::ate);
+        if (!ifs || ifs.tellg() == 0) {
+            std::cerr << "[DOWNLOAD] Downloaded file is empty or not found." << std::endl;
+            return false;
+        }
+        std::cout << "[DOWNLOAD] Downloaded file size: " << ifs.tellg() << " bytes" << std::endl;
+        finalModelPath = localPath;
+        return true;
     }
-    std::cout << "[DOWNLOAD] Downloaded file size: " << ifs.tellg() << " bytes" << std::endl;
-    std::cout << "[DOWNLOAD] SHA256: " << sha256File(localPath) << std::endl;
-    return true;
 }
 
 // 调用 AiModelPackagingCLI（跨平台）
 bool runPackagingCLI(const std::string& requestFile,
     const std::string& modelPath,
-    const std::string& outDir)
+    const std::string& outDir,
+    const std::string& inputShape)
 {
     namespace fs = std::filesystem;
 
@@ -385,8 +529,14 @@ bool runPackagingCLI(const std::string& requestFile,
         cliPath,
         "--request", requestFile,
         "--model", modelPath,
-        "--out", outDir
+        "--out", outDir,
     };
+
+    // 可选参数：input-shape
+    if (!inputShape.empty()) {
+        args.push_back("--input-shape");
+        args.push_back(inputShape);
+    }
 
     std::cout << "[CLI] Running: " << ProcessRunner::argsToString(args) << "\n";
     std::cout << "[CLI] cwd=" << getCwdString() << "\n";
@@ -473,6 +623,15 @@ void handlePackaging(const httplib::Request& req, httplib::Response& res) {
     std::string implType = requestBody["implementation"].value("type", "ONNX");
     std::string fileUri = requestBody["implementation"].value("fileUri", "");
     std::string implFilename = requestBody["implementation"].value("filename", "model.onnx");
+    // 可选参数：input-shape
+    std::string inputShape = "";
+    if (requestBody.contains("expectedBindings") &&
+        requestBody["expectedBindings"].is_array() &&
+        !requestBody["expectedBindings"].empty() &&
+        requestBody["expectedBindings"][0].contains("inputShape") &&
+        requestBody["expectedBindings"][0]["inputShape"].is_string()) {
+        inputShape = requestBody["expectedBindings"][0]["inputShape"].get<std::string>();
+    }
 
     // 使用项目根目录（由 CMake 注入的 PROJECT_ROOT 宏）
     std::string root = PROJECT_ROOT;
@@ -489,40 +648,20 @@ void handlePackaging(const httplib::Request& req, httplib::Response& res) {
         return;
     }
 
-    // 1. 下载模型
+    // 1. 下载模型（自动处理 ZIP 解压和 SHA256 校验）
     std::string localModel = root + "/models/" + implFilename;
+    std::string expectedSha = requestBody["implementation"].value("contentSha256", "");
+    std::string finalModelPath;
     std::cout << "[PACKAGING] Downloading model from " << fileUri << " to " << localModel << std::endl;
-    if (!downloadFile(fileUri, localModel)) {
+    if (!downloadFile(fileUri, localModel, expectedSha, finalModelPath)) {
         res.status = 500;
-        res.set_content(R"({"error":"Model download failed"})", "application/json");
+        res.set_content(R"({"error":"Model download or integrity check failed"})", "application/json");
         return;
     }
 
-    // 完整性校验（如果请求中提供了 contentSha256）
-    std::string expectedSha = requestBody["implementation"].value("contentSha256", "");
-    if (!expectedSha.empty()) {
-        std::string actualSha = sha256File(localModel);
-        if (actualSha != expectedSha) {
-            // 在服务启动时打印：
-#ifdef _WIN32
-            std::cerr << "[BOOT] PID=" << GetCurrentProcessId() << std::endl;
-#endif
-            std::cerr << "[PACKAGING] SHA256 mismatch!\n"
-                << "  expectedSha256: " << expectedSha << "\n"
-                << "  actualSha256:   " << actualSha << "\n"
-                << "  localPath:      " << localModel << "\n"
-                << "  fileSize:       " << std::filesystem::file_size(localModel) << "\n"
-                << std::endl;
-
-            res.status = 500;
-            res.set_content(R"({"error":"Downloaded model integrity check failed"})", "application/json");
-            return;
-        }
-        std::cout << "[PACKAGING] SHA256 verification passed." << std::endl;
-    }
-    else {
-        std::cout << "[PACKAGING] No contentSha256 provided, skipping integrity check." << std::endl;
-    }
+    // 后续所有对模型路径的引用均使用 finalModelPath
+    std::cout << "[PACKAGING] Model ready at: " << finalModelPath << std::endl;
+    localModel = finalModelPath;
 
     // 2. 保存请求 JSON（格式化输出）
     std::string requestFilePath = root + "/requests/" + taskId + ".json";
@@ -543,7 +682,7 @@ void handlePackaging(const httplib::Request& req, httplib::Response& res) {
     // 3. 调用 CLI，输出到 Upload_Result
     std::string outDir = root + "/" + std::string(DEFAULT_UPLOAD_DIR_NAME);
     std::cout << "[PACKAGING] Calling CLI...\n";
-    if (!runPackagingCLI(requestFilePath, localModel, outDir)) {
+    if (!runPackagingCLI(requestFilePath, localModel, outDir,inputShape)) {
         res.status = 500;
         res.set_content(R"({"error":"Packaging failed"})", "application/json");
         return;

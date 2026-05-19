@@ -2,33 +2,33 @@
   "protocolVersion": "1.0",
   "taskId": "20260513001",
   "taskType": "MODEL_PACKAGING",
-  "requestTime": "2026-05-09T15:00:00+08:00",
+  "requestTime": "2026-05-05T18:00:00+08:00",
   "block": {
-    "blockKey": "BlockDefinition:LocalTest::AffineTest",
-    "blockName": "AffineTest",
+    "blockKey": "BlockDefinition:LocalTest::PyTorchAntiJamming",
+    "blockName": "PyTorchAntiJamming",
     "packagePath": "LocalTest",
-    "description": "Local affine model ONNX packaging test"
+    "description": "Local PyTorch anti-jamming model (from anti_jamming.pt / best_anti_jamming_corr.pth)"
   },
   "implementation": {
-    "type": "ONNX",
-    "filename": "affine_savemodel.onnx",
-    "fileUri": "http://localhost:8000/affine_savemodel.onnx",
-    "contentSha256": "bef0a83f26089b4739a65303dc34293548c70907c87a51aba9256886de821e5d",
-    "deliveryPackageRelativePath": "models/affine_savemodel.onnx"
+    "type": "PyTorch",
+    "filename": "anti_jamming.pt",
+    "fileUri": "http://localhost:8000/anti_jamming.pt",
+    "contentSha256": "037f7de56a857936d180c1902a8d001ea0963b28cd3a1b97bd00de14e7723fc1",
+    "deliveryPackageRelativePath": "models/anti_jamming.pt"
   },
   "portMapping": {
     "p_in": {
-      "x": "input"
+      "input": "x.1"
     },
     "p_out": {
-      "y": "output_0"
+      "output": "117"
     }
   },
   "expectedBindings": [
     {
-      "sysmlPath": "p_in.x",
+      "sysmlPath": "p_in.input",
       "target": {
-        "name": "input",
+        "name": "x.1",
         "kind": "tensor",
         "role": "input",
         "index": null,
@@ -37,15 +37,14 @@
       "expectedDirection": "input",
       "expectedType": "double",
       "expectedShape": [
-        -1,
-        4
+        -1
       ],
       "expectedPrecision": "float32"
     },
     {
-      "sysmlPath": "p_out.y",
+      "sysmlPath": "p_out.output",
       "target": {
-        "name": "output_0",
+        "name": "117",
         "kind": "tensor",
         "role": "output",
         "index": null,
@@ -54,17 +53,25 @@
       "expectedDirection": "output",
       "expectedType": "double",
       "expectedShape": [
-        -1,
-        4
+        -1
       ],
       "expectedPrecision": "float32"
     }
   ],
+  "typeSystem": {
+    "primitiveTypes": {},
+    "dataTypes": {}
+  },
+  "sysmlInterface": {
+    "ports": [],
+    "valueProperties": [],
+    "connections": []
+  },
   "generationOptions": {
     "language": "C++",
     "cppStandard": "C++17",
     "namespace": "twin.generated",
-    "className": "AffineTestWrapper",
+    "className": "PyTorchAntiJammingWrapper",
     "emitMappingTable": true,
     "emitWarnings": true,
     "emitUnmatchedList": true

@@ -2,19 +2,19 @@
   "protocolVersion": "1.0",
   "taskId": "2054866287091388416",
   "taskType": "MODEL_PACKAGING",
-  "requestTime": "2026-05-09T15:00:00+08:00",
+  "requestTime": "2026-05-05T10:00:00+08:00",
   "block": {
-    "blockKey": "BlockDefinition:LocalTest::AffineTest",
-    "blockName": "AffineTest",
+    "blockKey": "BlockDefinition:LocalTest::TensorFlowAffineFromDetected",
+    "blockName": "TensorFlowAffineFromDetected",
     "packagePath": "LocalTest",
-    "description": "Local affine model ONNX packaging test"
+    "description": "Local TensorFlow affine SavedModel test (names from Detected_Model_Meta.json)"
   },
   "implementation": {
-    "type": "ONNX",
-    "filename": "affine_savemodel.onnx",
-    "fileUri": "http://localhost:8000/affine_savemodel.onnx",
-    "contentSha256": "bef0a83f26089b4739a65303dc34293548c70907c87a51aba9256886de821e5d",
-    "deliveryPackageRelativePath": "models/affine_savemodel.onnx"
+    "type": "TensorFlow",
+    "filename": "affine_savemodel.zip",
+    "fileUri": "http://localhost:8000/affine_savemodel.zip",
+    "contentSha256": "14bd84b01b592659208f0dea94a58a052aed06cd50fb4bdb9cb81b7271e1664e",
+    "deliveryPackageRelativePath": "models/affine_savemodel"
   },
   "portMapping": {
     "p_in": {
@@ -58,13 +58,40 @@
         4
       ],
       "expectedPrecision": "float32"
+    },
+    {
+      "sysmlPath": "p_out.y0",
+      "target": {
+        "name": "output_0",
+        "kind": "tensor_element",
+        "role": "output",
+        "index": [
+          0
+        ],
+        "slice": null
+      },
+      "expectedDirection": "output",
+      "expectedType": "double",
+      "expectedShape": [
+        1
+      ],
+      "expectedPrecision": "float32"
     }
   ],
+  "typeSystem": {
+    "primitiveTypes": {},
+    "dataTypes": {}
+  },
+  "sysmlInterface": {
+    "ports": [],
+    "valueProperties": [],
+    "connections": []
+  },
   "generationOptions": {
     "language": "C++",
     "cppStandard": "C++17",
     "namespace": "twin.generated",
-    "className": "AffineTestWrapper",
+    "className": "TensorFlowAffineWrapper",
     "emitMappingTable": true,
     "emitWarnings": true,
     "emitUnmatchedList": true
